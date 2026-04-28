@@ -11,31 +11,56 @@
 
 ## Architecture Overview
 
-```text
-┌────────────────────────────────────────────────────────────────────────────┐
-│  S3 Input Bucket                                                    │
-│  (Document uploaded: contract.txt, policy.md, etc.)                 │
-└────────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│  AWS Step Functions ──────────────────────────────────────────── │
-│                                                                     │
-│   ┌────────────┐    ┌─────────────────────────┐    ┌────────────┐    ┌────────────┐ │
-│   │  Chunker    │───│   Map (Parallel)   │───│ Aggregator │───│  Reporter  │ │
-│   │   Lambda    │    │   Agent Executor   │    │   Lambda   │    │   Lambda  │ │
-│   └────────────┘    │      Lambda       │    └────────────┘    └────────────┘ │
-│                      │  × N chunks        │                        │
-│                      └─────────────────────────┘                        │
-└────────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│  S3 Output Bucket + DynamoDB Metadata Table                         │
-│  • reports/{job_id}.json  (structured data)                          │
-│  • reports/{job_id}.md    (human-readable Markdown)                  │
-│  • DynamoDB: queryable metadata index                                │
-└────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Input[" "]
+        S3IN[("S3 Input Bucket")]
+        DOC["contract.txt / policy.md / msa.pdf"]
+    end
+
+    subgraph SF["AWS Step Functions State Machine"]
+        direction LR
+        CHUNK["Stage 1: Chunker Lambda"]
+        MAP["Stage 2: Map (Parallel)"]
+        AGG["Stage 3: Aggregator Lambda"]
+        REP["Stage 4: Reporter Lambda"]
+    end
+
+    subgraph Executor["Agent Executor Lambda × N chunks"]
+        direction TB
+        A1["Contract Analyzer Agent"]
+        A2["Compliance Checker Agent"]
+        BED[("Amazon Bedrock<br/>Nova Pro / Claude 3")]
+    end
+
+    subgraph Output[" "]
+        S3OUT[("S3 Output Bucket")]
+        DDB[("DynamoDB<br/>Metadata Index")]
+    end
+
+    DOC --> S3IN
+    S3IN -->|"S3 PutObject<br/>EventBridge trigger"| CHUNK
+    CHUNK -->|"ChunkPayload[]"| MAP
+    MAP -->|"per chunk"| Executor
+    A1 -->|"Converse API"| BED
+    A2 -->|"Converse API"| BED
+    BED --> A1
+    BED --> A2
+    Executor -->|"AnalysisResult[]"| AGG
+    AGG -->|"FinalReport"| REP
+    REP -->|"reports/{job_id}.json<br/>reports/{job_id}.md"| S3OUT
+    REP -->|"metadata record"| DDB
+
+    style S3IN fill:#fbbf24,stroke:#f59e0b,color:#000
+    style S3OUT fill:#fbbf24,stroke:#f59e0b,color:#000
+    style DDB fill:#a78bfa,stroke:#8b5cf6,color:#fff
+    style BED fill:#a78bfa,stroke:#8b5cf6,color:#fff
+    style CHUNK fill:#34d399,stroke:#10b981,color:#000
+    style MAP fill:#34d399,stroke:#10b981,color:#000
+    style AGG fill:#34d399,stroke:#10b981,color:#000
+    style REP fill:#34d399,stroke:#10b981,color:#000
+    style A1 fill:#22d3ee,stroke:#06b6d4,color:#000
+    style A2 fill:#fb7185,stroke:#f43f5e,color:#fff
 ```
 
 ### Pipeline Stages
