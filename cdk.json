@@ -1,0 +1,18 @@
+{
+  "app": "python3 app.py",
+  "watch": {
+    "include": [
+      "src/**",
+      "cdk/**",
+      "app.py"
+    ],
+    "exclude": [
+      "tests/**",
+      "blog/**",
+      "docs/**"
+    ]
+  },
+  "context": {
+    "@aws-cdk/core:stackRelativeExports": true
+  }
+}
